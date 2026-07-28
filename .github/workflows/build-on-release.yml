@@ -1,0 +1,88 @@
+name: Build patched LobeHub image
+
+on:
+  release:
+    types: [published]
+  workflow_dispatch:
+    inputs:
+      lobehub_tag:
+        description: 'LobeHub tag to build (e.g. v1.30.0)'
+        required: false
+        default: ''
+
+env:
+  REGISTRY: ghcr.io
+  IMAGE_NAME: ${{ github.repository }}
+
+jobs:
+  get-tag:
+    runs-on: ubuntu-latest
+    outputs:
+      tag: ${{ steps.resolve.outputs.tag }}
+    steps:
+      - name: Resolve LobeHub tag
+        id: resolve
+        run: |
+          if [[ -n "${{ github.event.inputs.lobehub_tag }}" ]]; then
+            echo "tag=${{ github.event.inputs.lobehub_tag }}" >> "$GITHUB_OUTPUT"
+          else
+            TAG=$(curl -sL "https://api.github.com/repos/lobehub/lobe-chat/releases/latest" \
+              | jq -r '.tag_name // empty')
+            if [[ -z "$TAG" || "$TAG" == "null" ]]; then
+              echo "❌ Failed to resolve latest LobeHub tag"
+              exit 1
+            fi
+            echo "tag=$TAG" >> "$GITHUB_OUTPUT"
+          fi
+
+  build:
+    needs: get-tag
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout patch repository
+        uses: actions/checkout@v4
+
+      - name: Clone LobeHub at ${{ needs.get-tag.outputs.tag }}
+        run: |
+          git clone --depth 1 --branch "${{ needs.get-tag.outputs.tag }}" \
+            https://github.com/lobehub/lobe-chat.git lobehub
+          echo "Cloned lobehub/lobe-chat@${{ needs.get-tag.outputs.tag }}"
+
+      - name: Apply patches
+        run: |
+          bash scripts/apply-patches.sh "$PWD/lobehub"
+          # Verify the patch files are in place
+          echo "=== Verification ==="
+          grep -c "setCredentialProvider" lobehub/apps/server/src/modules/S3/index.ts
+          ls -la lobehub/apps/server/patches/
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Log in to GHCR
+        uses: docker/login-action@v3
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Extract metadata
+        id: meta
+        uses: docker/metadata-action@v5
+        with:
+          images: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}
+          tags: |
+            type=semver,pattern={{version}},value=${{ needs.get-tag.outputs.tag }}
+            type=semver,pattern={{major}}.{{minor}},value=${{ needs.get-tag.outputs.tag }}
+            type=raw,value=latest,enable=true
+
+      - name: Build and push
+        uses: docker/build-push-action@v6
+        with:
+          context: ./lobehub
+          file: ./lobehub/Dockerfile
+          push: true
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
