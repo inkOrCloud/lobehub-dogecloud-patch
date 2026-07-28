@@ -5,13 +5,25 @@
 ## 原理
 
 LobeHub 的 S3 存储使用静态环境变量（`S3_ACCESS_KEY_ID` / `S3_SECRET_ACCESS_KEY`）配置凭证。
-本补丁在 `S3` 类上添加了一个**动态凭证注册钩子**，允许通过平台 API 获取临时 STS 令牌。
+本补丁在 `S3` 类上添加了一个**动态凭证注册钩子**，允许通过平台 API 获取完整的 S3 配置（凭证 + endpoint + bucket）。
 
 ```mermaid
 flowchart LR
-    A[DogeCloud API<br/>POST /auth/tmp_token.json] -- 临时 STS --> B[凭证缓存]
-    B -- 提供凭证 --> C[S3Client]
-    C -- 读写文件 --> D[DogeCloud OSS]
+    A[DogeCloud API<br/>POST /auth/tmp_token.json]
+    A --> B["{ credentials, s3Endpoint, s3Bucket }"]
+    B --> C[内存缓存]
+    C --> D[S3Client]
+    D --> E[DogeCloud OSS]
+    F[环境变量 S3_ENDPOINT / S3_BUCKET] -. 可选覆盖 .-> D
+```
+
+### 配置来源优先级
+
+```
+s3Endpoint / s3Bucket 决定方式:
+  1. 环境变量 S3_ENDPOINT / S3_BUCKET (最高优先级，手动覆盖)
+  2. DogeCloud API 返回的 s3Endpoint / s3Bucket (模块加载时自动获取)
+  3. 原有 fileEnv 环境变量 (最后回退)
 ```
 
 ## 文件说明
@@ -25,7 +37,7 @@ flowchart LR
 
 ## 环境变量
 
-### 必填
+### 必填（DogeCloud 凭证）
 
 | 变量 | 说明 |
 |------|------|
@@ -40,15 +52,20 @@ flowchart LR
 | `DOGECLOUD_CHANNEL` | `OSS_FULL` | 密钥类型：`OSS_FULL` / `OSS_UPLOAD` / `OSS_CUSTOM` |
 | `DOGECLOUD_SCOPES` | `*` | 权限范围，多个用逗号分隔 |
 | `DOGECLOUD_TTL` | `7200` | 临时密钥有效期（秒），最大 7200 |
+| `S3_ENDPOINT` | — | **手动覆盖** s3Endpoint（DogeCloud 可能变更后端时使用） |
+| `S3_BUCKET` | — | **手动覆盖** s3Bucket |
 
-LobeHub 原有 S3 环境变量仍需配置：
+> 正常情况下不需要设 `S3_ENDPOINT` 和 `S3_BUCKET`，首次 API 调用会自动获取。
+> 仅当 DogeCloud 更换存储后端导致自动获取的值不生效时，才用这两个变量强制覆盖。
+
+LobeHub 原有 S3 环境变量**不再需要**配置（如果你设了它们会作为最后回退）：
 
 | 变量 | 说明 |
 |------|------|
-| `S3_ENDPOINT` | DogeCloud OSS 的 S3 兼容 endpoint（从 Bucket 详情页获取） |
-| `S3_BUCKET` | DogeCloud 返回的 `s3Bucket` 值（格式如 `s-cd-1-mybucket-123456789`） |
-| `S3_ENABLE_PATH_STYLE` | 一般设为 `1` |
-| `S3_REGION` | 如 `us-east-1` |
+| `S3_ACCESS_KEY_ID` | 不需要，由 DogeCloud 临时凭证提供 |
+| `S3_SECRET_ACCESS_KEY` | 不需要，由 DogeCloud 临时凭证提供 |
+| `S3_ENABLE_PATH_STYLE` | 保持 `1` |
+| `S3_REGION` | 保持 `us-east-1` |
 
 ## 使用方法
 
@@ -61,21 +78,25 @@ docker pull ghcr.io/inkOrCloud/lobehub-dogecloud-patch:latest
 ### 方式二：手动打补丁
 
 ```bash
-# 克隆 LobeHub
 git clone --depth 1 https://github.com/lobehub/lobe-chat.git
 cd lobe-chat
-
-# 打补丁
 bash /path/to/lobehub-dogecloud-patch/scripts/apply-patches.sh .
+```
+
+然后在入口文件添加一行：
+
+```ts
+// apps/server/src/hono/index.ts 或其它启动入口
+import './patches/dogecloud-credential-store';
 ```
 
 ### 方式三：触发 GitHub Actions
 
-在仓库的 Releases 页面创建一个新 release，或通过 Actions 页面手动触发 `workflow_dispatch`。
+在仓库的 Releases 页面创建一个新 release，或通过 Actions 页面手动触发。
 
 ## 构建产物
 
 每次构建会推送两个标签到 `ghcr.io`：
 
 - `ghcr.io/inkOrCloud/lobehub-dogecloud-patch:latest`
-- `ghcr.io/inkOrCloud/lobehub-dogecloud-patch:<semver>`（如 `v1.30.0`）
+- `ghcr.io/inkOrCloud/lobehub-dogecloud-patch:<semver>`
