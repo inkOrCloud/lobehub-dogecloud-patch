@@ -31,6 +31,15 @@ jobs:
           path: ./lobehub/
           github-token: ${{ secrets.GITHUB_TOKEN }}
 
+      - name: Verify artifact contents
+        run: |
+          echo "=== lobehub/ root ==="
+          ls -la lobehub/ 2>/dev/null | head -10
+          echo "--- .npmrc check ---"
+          ls -la lobehub/.npmrc 2>/dev/null && echo ".npmrc FOUND" || echo ".npmrc NOT FOUND"
+          echo "--- .dockerignore check ---"
+          ls -la lobehub/.dockerignore 2>/dev/null && echo ".dockerignore FOUND" || echo ".dockerignore NOT FOUND"
+
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
 

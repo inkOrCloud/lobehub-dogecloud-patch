@@ -18,6 +18,9 @@ jobs:
   release-source:
     runs-on: ubuntu-latest
     steps:
+      # checkout 为 gh release create 提供 git 上下文
+      - uses: actions/checkout@v4
+
       - name: Download patched source artifact
         uses: actions/download-artifact@v4
         with:

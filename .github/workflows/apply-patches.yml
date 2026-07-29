@@ -43,12 +43,12 @@ jobs:
           bash scripts/apply-patches.sh "$PWD/lobehub"
           echo "=== Verification ==="
           if [ -f lobehub/apps/server/src/modules/S3/index.ts ]; then
-            echo "--- S3 module (v2.2+ structure) ---"
+            echo "--- S3 module ---"
             grep -c "setCredentialProvider" lobehub/apps/server/src/modules/S3/index.ts
             echo "--- Credential store ---"
             ls -la lobehub/apps/server/src/patches/
           else
-            echo "--- S3 module (legacy structure) ---"
+            echo "--- S3 module (legacy) ---"
             grep -c "setCredentialProvider" lobehub/src/server/modules/S3/index.ts
             echo "--- Credential store ---"
             ls -la lobehub/src/server/patches/
@@ -59,6 +59,7 @@ jobs:
         with:
           name: patched-source-${{ steps.resolve.outputs.tag }}
           path: lobehub/
+          include-hidden-files: true
           retention-days: 7
 
       - name: Trigger C - Release Source
