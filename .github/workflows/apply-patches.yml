@@ -13,7 +13,6 @@ env:
 permissions:
   contents: read
   actions: write
-  workflows: write
 
 jobs:
   patch-and-trigger:
@@ -27,7 +26,6 @@ jobs:
           TAG="${{ github.event.inputs.lobehub_tag }}"
           echo "tag=$TAG" >> "$GITHUB_OUTPUT"
 
-          # 检查最低版本
           MIN="${{ env.MIN_LOBEHUB_VERSION }}"
           TAG_NUM="${TAG#v}"
           MIN_NUM="${MIN#v}"
