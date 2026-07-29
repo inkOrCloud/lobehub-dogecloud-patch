@@ -105,6 +105,28 @@ import '../patches/dogecloud-credential-store';
 
 > ⚠️ 工作流会自动校验 LobeHub tag 版本是否 ≥ v2.2.3，不满足时提前报错。
 
+### GHCR 推送权限配置
+
+工作流默认使用 `GITHUB_TOKEN` 登录 GHCR。如果遇到 `denied: installation not allowed to Create organization package` 错误，有两种解决方式：
+
+#### 方式 A：配置仓库权限（推荐）
+
+仓库 **Settings → Actions → General → Workflow permissions**：
+- 选择 **"Read and write permissions"**
+- 勾选 **"Allow GitHub Actions to create and approve pull requests"**
+
+#### 方式 B：使用 Personal Access Token
+
+如果方式 A 不足以解决问题（例如组织级别限制了 GITHUB_TOKEN 的 package 创建权限），可以创建一个 PAT 并配置为仓库 Secret：
+
+1. 在 GitHub **Settings → Developer settings → Personal access tokens → Fine-grained tokens** 创建一个 token
+   - 权限范围：选择 `inkOrCloud/lobehub-dogecloud-patch` 仓库
+   - 至少勾选 **Contents: Read** 和 **Packages: Write**
+2. 在仓库 **Settings → Secrets and variables → Actions** 添加一个名为 **`GHCR_PAT`** 的 Secret
+3. 将上一步创建的 token 粘贴进去
+
+配置后工作流会自动优先使用 `GHCR_PAT`，不存在时回退到 `GITHUB_TOKEN`。
+
 ## 构建产物
 
 每次构建会推送两个标签到 `ghcr.io`：
