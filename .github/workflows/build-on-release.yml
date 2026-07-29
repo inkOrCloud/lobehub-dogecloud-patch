@@ -13,6 +13,7 @@ on:
 env:
   REGISTRY: ghcr.io
   IMAGE_NAME: ${{ github.repository }}
+  MIN_LOBEHUB_VERSION: 'v2.2.3'
 
 jobs:
   get-tag:
@@ -35,8 +36,29 @@ jobs:
             echo "tag=$TAG" >> "$GITHUB_OUTPUT"
           fi
 
+      - name: Check minimum version
+        run: |
+          TAG="${{ steps.resolve.outputs.tag }}"
+          MIN="${{ env.MIN_LOBEHUB_VERSION }}"
+
+          # Strip leading 'v' for comparison
+          TAG_NUM="${TAG#v}"
+          MIN_NUM="${MIN#v}"
+
+          # Use sort -V for semver comparison
+          HIGHEST=$(printf '%s\n' "$TAG_NUM" "$MIN_NUM" | sort -V | tail -1)
+
+          if [ "$HIGHEST" != "$TAG_NUM" ]; then
+            echo "❌ LobeHub tag $TAG is lower than minimum supported version $MIN"
+            echo "   The current patch requires LobeHub >= $MIN (turborepo structure)."
+            echo "   For older versions, checkout an earlier revision of this repository."
+            exit 1
+          fi
+
+          echo "✅ LobeHub tag $TAG meets minimum version $MIN"
+
   build:
-    needs: get-tag
+    needs: [get-tag]
     runs-on: ubuntu-latest
     steps:
       - name: Checkout patch repository
@@ -51,10 +73,19 @@ jobs:
       - name: Apply patches
         run: |
           bash scripts/apply-patches.sh "$PWD/lobehub"
-          # Verify the patch files are in place
+          # Verify the patch files are in place (supports both old and new structure)
           echo "=== Verification ==="
-          grep -c "setCredentialProvider" lobehub/apps/server/src/modules/S3/index.ts
-          ls -la lobehub/apps/server/patches/
+          if [ -f lobehub/apps/server/src/modules/S3/index.ts ]; then
+            echo "--- S3 module (v2.2+ structure) ---"
+            grep -c "setCredentialProvider" lobehub/apps/server/src/modules/S3/index.ts
+            echo "--- Credential store ---"
+            ls -la lobehub/apps/server/src/patches/
+          else
+            echo "--- S3 module (legacy structure) ---"
+            grep -c "setCredentialProvider" lobehub/src/server/modules/S3/index.ts
+            echo "--- Credential store ---"
+            ls -la lobehub/src/server/patches/
+          fi
 
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3

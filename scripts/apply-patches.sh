@@ -25,7 +25,13 @@ else
 fi
 
 # 复制 DogeCloud 凭证存储 ---
-DEST="apps/server/patches"
+# 优先使用 apps/server/src/patches（v2.2+ turborepo 结构），
+# 如果不存在则回退到旧版 src/server/patches
+if [ -d "apps/server/src" ]; then
+  DEST="apps/server/src/patches"
+else
+  DEST="src/server/patches"
+fi
 mkdir -p "$DEST"
 cp "$PATCHES_DIR/dogecloud-credential-store.ts" "$DEST/"
 echo "✓ 已复制 dogecloud-credential-store.ts → $DEST/"
@@ -33,8 +39,8 @@ echo "✓ 已复制 dogecloud-credential-store.ts → $DEST/"
 echo ""
 echo "✅ 补丁全部应用完成"
 echo ""
-echo "下一步: 在 LobeHub 的入口文件（如 apps/server/src/index.ts）中添加:"
-echo "  import './patches/dogecloud-credential-store';"
+echo "下一步: 在 LobeHub 服务端入口文件（如 apps/server/src/hono/standalone.ts）中添加:"
+echo "  import '../patches/dogecloud-credential-store';"
 echo ""
 echo "环境变量设置:"
 echo "  DOGECLOUD_ACCESS_KEY=your_access_key"

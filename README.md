@@ -2,6 +2,15 @@
 
 自动追踪 LobeHub tag 发布，打补丁使其支持[多吉云 DogeCloud](https://docs.dogecloud.com/oss/api-introduction) 临时 S3 凭证并构建 Docker 镜像发布到 GHCR。
 
+## 兼容性
+
+| 补丁版本 | 最低 LobeHub 版本 | 目录结构 |
+|----------|-------------------|----------|
+| 当前     | `v2.2.3`         | `apps/server/` (turborepo) |
+| 旧版     | `v1.0.0` ~ `v2.2.2` | `src/server/` (legacy) |
+
+> 当前补丁仅支持 **v2.2.3 及以上**版本。如果需要对更早版本打补丁，请 checkout 旧版 `s3-credential-hook.patch`。
+
 ## 原理
 
 LobeHub 的 S3 存储使用静态环境变量（`S3_ACCESS_KEY_ID` / `S3_SECRET_ACCESS_KEY`）配置凭证。
@@ -78,7 +87,7 @@ docker pull ghcr.io/inkOrCloud/lobehub-dogecloud-patch:latest
 ### 方式二：手动打补丁
 
 ```bash
-git clone --depth 1 https://github.com/lobehub/lobe-chat.git
+git clone --depth 1 --branch v2.2.3 https://github.com/lobehub/lobe-chat.git
 cd lobe-chat
 bash /path/to/lobehub-dogecloud-patch/scripts/apply-patches.sh .
 ```
@@ -86,13 +95,15 @@ bash /path/to/lobehub-dogecloud-patch/scripts/apply-patches.sh .
 然后在入口文件添加一行：
 
 ```ts
-// apps/server/src/hono/index.ts 或其它启动入口
-import './patches/dogecloud-credential-store';
+// apps/server/src/hono/standalone.ts 或其它服务端入口
+import '../patches/dogecloud-credential-store';
 ```
 
 ### 方式三：触发 GitHub Actions
 
 在仓库的 Releases 页面创建一个新 release，或通过 Actions 页面手动触发。
+
+> ⚠️ 工作流会自动校验 LobeHub tag 版本是否 ≥ v2.2.3，不满足时提前报错。
 
 ## 构建产物
 
