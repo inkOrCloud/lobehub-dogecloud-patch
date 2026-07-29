@@ -28,6 +28,7 @@ jobs:
         with:
           name: patched-source-${{ github.event.inputs.lobehub_tag }}
           run-id: ${{ github.event.inputs.artifact_run_id }}
+          path: ./lobehub/
           github-token: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Set up Docker Buildx
@@ -38,11 +39,9 @@ jobs:
           GHCR_PAT: ${{ secrets.GHCR_PAT }}
         run: |
           if [[ -n "$GHCR_PAT" ]]; then
-            echo "🔑 Using GHCR_PAT secret"
             echo "$GHCR_PAT" | docker login "${{ env.REGISTRY }}" \
               -u "${{ github.actor }}" --password-stdin
           else
-            echo "🔑 Using GITHUB_TOKEN (ensure WRITE permission is enabled)"
             echo "${{ secrets.GITHUB_TOKEN }}" | docker login "${{ env.REGISTRY }}" \
               -u "${{ github.actor }}" --password-stdin
           fi

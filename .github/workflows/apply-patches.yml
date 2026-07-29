@@ -25,14 +25,11 @@ jobs:
         run: |
           TAG="${{ github.event.inputs.lobehub_tag }}"
           echo "tag=$TAG" >> "$GITHUB_OUTPUT"
-
           MIN="${{ env.MIN_LOBEHUB_VERSION }}"
-          TAG_NUM="${TAG#v}"
-          MIN_NUM="${MIN#v}"
+          TAG_NUM="${TAG#v}"; MIN_NUM="${MIN#v}"
           HIGHEST=$(printf '%s\n' "$TAG_NUM" "$MIN_NUM" | sort -V | tail -1)
           if [ "$HIGHEST" != "$TAG_NUM" ]; then
-            echo "❌ LobeHub tag $TAG is lower than minimum supported version $MIN"
-            exit 1
+            echo "❌ LobeHub tag $TAG is lower than minimum supported version $MIN"; exit 1
           fi
           echo "✅ LobeHub tag $TAG meets minimum version $MIN"
 
@@ -40,7 +37,6 @@ jobs:
         run: |
           git clone --depth 1 --branch "${{ steps.resolve.outputs.tag }}" \
             https://github.com/lobehub/lobe-chat.git lobehub
-          echo "Cloned lobehub/lobe-chat@${{ steps.resolve.outputs.tag }}"
 
       - name: Apply patches
         run: |
@@ -62,7 +58,7 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: patched-source-${{ steps.resolve.outputs.tag }}
-          path: lobehub
+          path: lobehub/
           retention-days: 7
 
       - name: Trigger C - Release Source
@@ -73,7 +69,6 @@ jobs:
             -f lobehub_tag="${{ steps.resolve.outputs.tag }}" \
             -f artifact_run_id="${{ github.run_id }}" \
             --ref "${{ github.ref_name }}"
-          echo "✅ Triggered C workflow"
 
       - name: Trigger D - Build Docker Image
         env:
@@ -83,4 +78,3 @@ jobs:
             -f lobehub_tag="${{ steps.resolve.outputs.tag }}" \
             -f artifact_run_id="${{ github.run_id }}" \
             --ref "${{ github.ref_name }}"
-          echo "✅ Triggered D workflow"

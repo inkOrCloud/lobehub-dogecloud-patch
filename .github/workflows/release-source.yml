@@ -23,6 +23,7 @@ jobs:
         with:
           name: patched-source-${{ github.event.inputs.lobehub_tag }}
           run-id: ${{ github.event.inputs.artifact_run_id }}
+          path: ./lobehub/
           github-token: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Create patched source archive
@@ -40,31 +41,12 @@ jobs:
           TAG="${{ github.event.inputs.lobehub_tag }}"
           RELEASE_TAG="patched-$TAG"
           ARCHIVE="${{ steps.archive.outputs.archive }}"
-
           if gh release view "$RELEASE_TAG" --json name 2>/dev/null; then
-            echo "ℹ Release $RELEASE_TAG already exists, uploading asset..."
             gh release upload "$RELEASE_TAG" "$ARCHIVE" --clobber
           else
-            echo "📦 Creating release $RELEASE_TAG..."
             gh release create "$RELEASE_TAG" \
               --title "Patched LobeHub $TAG" \
-              --notes "Patched source code of LobeHub **$TAG** with DogeCloud S3 credential support.
-
-          This archive contains the full LobeHub source after applying the DogeCloud patch.
-
-          ## What's included
-          - LobeHub source at tag \`$TAG\`
-          - \`patches/dogecloud-credential-store.ts\` — DogeCloud STS credential provider
-          - \`patches/s3-credential-hook.patch\` — S3 credential hook modification
-
-          ## Usage
-          \`\`\`bash
-          tar -xzf $ARCHIVE
-          cd lobehub
-          docker build -t lobehub-patched -f Dockerfile .
-          \`\`\`
-
-          See the [main README](https://github.com/${{ github.repository }}) for environment variable configuration." \
+              --notes "Patched source code of LobeHub **$TAG** with DogeCloud S3 credential support.\n\nSee the [README](https://github.com/${{ github.repository }}) for configuration." \
               "$ARCHIVE"
           fi
           echo "✅ Published $RELEASE_TAG"
