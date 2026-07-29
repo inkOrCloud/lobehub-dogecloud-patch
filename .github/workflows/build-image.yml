@@ -1,4 +1,4 @@
-name: Build patched LobeHub image
+name: Build Docker Image
 
 on:
   release:
@@ -16,11 +16,12 @@ env:
   MIN_LOBEHUB_VERSION: 'v2.2.3'
 
 jobs:
-  get-tag:
+  build-and-push:
     runs-on: ubuntu-latest
-    outputs:
-      tag: ${{ steps.resolve.outputs.tag }}
     steps:
+      - name: Checkout patch repository
+        uses: actions/checkout@v4
+
       - name: Resolve LobeHub tag
         id: resolve
         run: |
@@ -40,50 +41,30 @@ jobs:
         run: |
           TAG="${{ steps.resolve.outputs.tag }}"
           MIN="${{ env.MIN_LOBEHUB_VERSION }}"
-
-          # Strip leading 'v' for comparison
           TAG_NUM="${TAG#v}"
           MIN_NUM="${MIN#v}"
-
-          # Use sort -V for semver comparison
           HIGHEST=$(printf '%s\n' "$TAG_NUM" "$MIN_NUM" | sort -V | tail -1)
-
           if [ "$HIGHEST" != "$TAG_NUM" ]; then
             echo "❌ LobeHub tag $TAG is lower than minimum supported version $MIN"
-            echo "   The current patch requires LobeHub >= $MIN (turborepo structure)."
-            echo "   For older versions, checkout an earlier revision of this repository."
             exit 1
           fi
-
           echo "✅ LobeHub tag $TAG meets minimum version $MIN"
 
-  build:
-    needs: [get-tag]
-    runs-on: ubuntu-latest
-    steps:
-      - name: Checkout patch repository
-        uses: actions/checkout@v4
-
-      - name: Clone LobeHub at ${{ needs.get-tag.outputs.tag }}
+      - name: Clone LobeHub at ${{ steps.resolve.outputs.tag }}
         run: |
-          git clone --depth 1 --branch "${{ needs.get-tag.outputs.tag }}" \
+          git clone --depth 1 --branch "${{ steps.resolve.outputs.tag }}" \
             https://github.com/lobehub/lobe-chat.git lobehub
-          echo "Cloned lobehub/lobe-chat@${{ needs.get-tag.outputs.tag }}"
+          echo "Cloned lobehub/lobe-chat@${{ steps.resolve.outputs.tag }}"
 
       - name: Apply patches
         run: |
           bash scripts/apply-patches.sh "$PWD/lobehub"
-          # Verify the patch files are in place (supports both old and new structure)
           echo "=== Verification ==="
           if [ -f lobehub/apps/server/src/modules/S3/index.ts ]; then
-            echo "--- S3 module (v2.2+ structure) ---"
             grep -c "setCredentialProvider" lobehub/apps/server/src/modules/S3/index.ts
-            echo "--- Credential store ---"
             ls -la lobehub/apps/server/src/patches/
           else
-            echo "--- S3 module (legacy structure) ---"
             grep -c "setCredentialProvider" lobehub/src/server/modules/S3/index.ts
-            echo "--- Credential store ---"
             ls -la lobehub/src/server/patches/
           fi
 
@@ -110,8 +91,8 @@ jobs:
         with:
           images: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}
           tags: |
-            type=semver,pattern={{version}},value=${{ needs.get-tag.outputs.tag }}
-            type=semver,pattern={{major}}.{{minor}},value=${{ needs.get-tag.outputs.tag }}
+            type=semver,pattern={{version}},value=${{ steps.resolve.outputs.tag }}
+            type=semver,pattern={{major}}.{{minor}},value=${{ steps.resolve.outputs.tag }}
             type=raw,value=latest,enable=true
 
       - name: Build and push

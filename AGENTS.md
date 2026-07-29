@@ -9,7 +9,9 @@
 ├── scripts/
 │   └── apply-patches.sh                  # One-click script to apply patches to a LobeHub checkout
 ├── .github/workflows/
-│   └── build-on-release.yml              # CI: build patched Docker image and push to GHCR
+│   ├── apply-patches.yml                 # Clone LobeHub + apply patches + upload artifact
+│   ├── build-image.yml                   # Clone + patch + build Docker image + push to GHCR
+│   └── release-source.yml                # Clone + patch + archive tar.gz + publish to Releases
 ├── README.md                             # Full documentation
 └── AGENTS.md                             # This file
 ```
@@ -18,17 +20,37 @@
 - **`scripts/`** — Automation scripts for applying patches locally.
 - **`.github/workflows/`** — GitHub Actions CI/CD workflows.
 
+## GitHub Actions Workflows
+
+### `apply-patches.yml` — Apply Patches
+- **Trigger**: `workflow_dispatch` (manual, optional `lobehub_tag` input)
+- **What it does**: Resolves LobeHub tag → clones LobeHub → applies patches → uploads patched source as a build artifact (7-day retention)
+- **Use case**: For downstream tasks that need the patched source without building a Docker image
+
+### `build-image.yml` — Build Docker Image
+- **Trigger**: `release` published, or `workflow_dispatch` (manual, optional `lobehub_tag` input)
+- **What it does**: Resolves LobeHub tag → clones LobeHub → applies patches → builds Docker image → pushes to `ghcr.io/inkOrCloud/lobehub-dogecloud-patch`
+- **Tags pushed**: `latest`, `<semver>`, `<major>.<minor>`
+- **Secrets**: `GHCR_PAT` (optional, falls back to `GITHUB_TOKEN`)
+- **This replaces the original monolithic `build-on-release.yml`**
+
+### `release-source.yml` — Release Patched Source
+- **Trigger**: `release` published, or `workflow_dispatch` (manual, optional `lobehub_tag` input)
+- **What it does**: Resolves LobeHub tag → clones LobeHub → applies patches → creates `tar.gz` archive → uploads to GitHub Releases
+- **Release naming** (manual trigger): `patched-<lobehub_tag>` (e.g. `patched-v2.2.3`)
+- **Use case**: Distributing the patched source code for users who want to inspect or build manually
+
 ## Build, Test, and Development Commands
 
 ```bash
 # Apply patches to a local LobeHub clone
 bash scripts/apply-patches.sh /path/to/lobe-chat
 
-# Dry-run the GitHub Actions workflow locally (requires act)
-act workflow_dispatch -e <(echo '{"inputs":{"lobehub_tag":"v1.30.0"}}')
+# Dry-run a workflow locally (requires act)
+act workflow_dispatch -e <(echo '{"inputs":{"lobehub_tag":"v1.30.0"}}') -W .github/workflows/build-image.yml
 ```
 
-There are no unit tests in this repository; validation is done at build time via the CI workflow (verifies the patch applied and the credential store file exists).
+There are no unit tests in this repository; validation is done at build time via the CI workflows (verifies the patch applied and the credential store file exists).
 
 ## Coding Style & Naming Conventions
 
@@ -42,7 +64,7 @@ There are no unit tests in this repository; validation is done at build time via
 This repository does not have an automated test suite. Testing relies on:
 
 1. **Patch applicability check** — `git apply --check` in `apply-patches.sh` validates that the patch applies cleanly.
-2. **Build-time verification** — The CI workflow greps for expected content after applying patches (see `build-on-release.yml`).
+2. **Build-time verification** — The CI workflows grep for expected content after applying patches (see workflow files).
 3. **Manual smoke testing** — Run the patched image locally with DogeCloud credentials configured and verify S3 operations work.
 
 When modifying patches, always verify that they apply cleanly against the target LobeHub tag before committing.
@@ -62,11 +84,18 @@ fix: correct patch file paths for git apply
 
 ## CI/CD & Release Process
 
-Releases are triggered by publishing a GitHub Release, or manually via `workflow_dispatch` with a specific LobeHub tag. The CI workflow:
+Releases are triggered by publishing a GitHub Release, or manually via `workflow_dispatch` with a specific LobeHub tag. The three CI workflows handle different aspects:
 
-1. Resolves the LobeHub tag (latest release or manually specified).
-2. Clones LobeHub at that tag.
-3. Applies patches via `scripts/apply-patches.sh`.
-4. Builds and pushes a Docker image to `ghcr.io/inkOrCloud/lobehub-dogecloud-patch`.
+1. **`apply-patches.yml`** — Just patches the source and makes it available as an artifact.
+2. **`build-image.yml`** — Patches and builds a Docker image, pushing to GHCR. This is the primary release workflow.
+3. **`release-source.yml`** — Patches and publishes the source as a `tar.gz` archive to GitHub Releases.
 
-Tagged releases use semver (`v1.2.3`); `latest` is always pushed on each release.
+Tagged releases use semver (`v1.2.3`); `latest` is always pushed on each build.
+
+### Which workflow to run?
+
+| Goal | Workflow |
+|------|----------|
+| Just want the patched source artifact | `apply-patches.yml` |
+| Need a Docker image | `build-image.yml` |
+| Want to distribute the source via Releases | `release-source.yml` |

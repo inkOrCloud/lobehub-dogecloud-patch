@@ -1,6 +1,11 @@
 # LobeHub DogeCloud Patch
 
-自动追踪 LobeHub tag 发布，打补丁使其支持[多吉云 DogeCloud](https://docs.dogecloud.com/oss/api-introduction) 临时 S3 凭证并构建 Docker 镜像发布到 GHCR。
+自动追踪 LobeHub tag 发布，打补丁使其支持[多吉云 DogeCloud](https://docs.dogecloud.com/oss/api-introduction) 临时 S3 凭证。
+
+提供三个独立的 CI 工作流：
+- **Apply Patches** — 克隆 + 打补丁，上传产物
+- **Build Docker Image** — 克隆 + 打补丁 + 构建 Docker 镜像并推送到 GHCR
+- **Release Patched Source** — 克隆 + 打补丁 + 打包 `tar.gz` 发布到 Releases
 
 ## 兼容性
 
@@ -42,7 +47,9 @@ s3Endpoint / s3Bucket 决定方式:
 | `patches/s3-credential-hook.patch` | 修改 `S3/index.ts`，添加 `setCredentialProvider` 钩子 |
 | `patches/dogecloud-credential-store.ts` | 从多吉云获取临时凭证并注册到钩子 |
 | `scripts/apply-patches.sh` | 一键打补丁脚本 |
-| `.github/workflows/build-on-release.yml` | 自动构建工作流 |
+| `.github/workflows/apply-patches.yml` | 克隆 + 打补丁 + 上传产物 |
+| `.github/workflows/build-image.yml` | 克隆 + 打补丁 + 构建 Docker 镜像 + 推送 GHCR |
+| `.github/workflows/release-source.yml` | 克隆 + 打补丁 + 打包发布到 Releases |
 
 ## 环境变量
 
@@ -78,13 +85,22 @@ LobeHub 原有 S3 环境变量**不再需要**配置（如果你设了它们会�
 
 ## 使用方法
 
-### 方式一：直接使用 GHCR 镜像
+### 方式一：使用 GHCR 镜像
 
 ```bash
 docker pull ghcr.io/inkOrCloud/lobehub-dogecloud-patch:latest
 ```
 
-### 方式二：手动打补丁
+### 方式二：从 Releases 下载 patched 源码
+
+在 [Releases](https://github.com/inkOrCloud/lobehub-dogecloud-patch/releases) 页面下载 `lobehub-patched-<tag>.tar.gz`，自行构建：
+
+```bash
+tar -xzf lobehub-patched-v2.2.3.tar.gz
+docker build -t lobehub-patched -f Dockerfile .
+```
+
+### 方式三：手动打补丁
 
 ```bash
 git clone --depth 1 --branch v2.2.3 https://github.com/lobehub/lobe-chat.git
@@ -99,9 +115,15 @@ bash /path/to/lobehub-dogecloud-patch/scripts/apply-patches.sh .
 import '../patches/dogecloud-credential-store';
 ```
 
-### 方式三：触发 GitHub Actions
+### 方式四：触发 GitHub Actions
 
-在仓库的 Releases 页面创建一个新 release，或通过 Actions 页面手动触发。
+在仓库的 Actions 页面选择对应的工作流手动触发：
+
+| 工作流 | 用途 |
+|--------|------|
+| **Apply Patches** | 仅打补丁，产物保留 7 天 |
+| **Build Docker Image** | 打补丁 + 构建 Docker 镜像并推送到 GHCR |
+| **Release Patched Source** | 打补丁 + 打包源码发布到 Releases |
 
 > ⚠️ 工作流会自动校验 LobeHub tag 版本是否 ≥ v2.2.3，不满足时提前报错。
 
@@ -130,7 +152,14 @@ import '../patches/dogecloud-credential-store';
 
 ## 构建产物
 
-每次构建会推送两个标签到 `ghcr.io`：
+### Docker 镜像
+
+通过 `build-image.yml` 构建，每次构建会推送两个标签到 `ghcr.io`：
 
 - `ghcr.io/inkOrCloud/lobehub-dogecloud-patch:latest`
 - `ghcr.io/inkOrCloud/lobehub-dogecloud-patch:<semver>`
+
+### Patched 源码
+
+通过 `release-source.yml` 发布，每次发布会在 Releases 页面附加一个 `lobehub-patched-<tag>.tar.gz` 文件。
+手动触发时会在 Releases 页面创建一个名为 `patched-<tag>` 的新 release。

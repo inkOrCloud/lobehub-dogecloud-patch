@@ -1,0 +1,76 @@
+name: Apply Patches
+
+on:
+  workflow_dispatch:
+    inputs:
+      lobehub_tag:
+        description: 'LobeHub tag to patch (e.g. v1.30.0)'
+        required: false
+        default: ''
+
+env:
+  MIN_LOBEHUB_VERSION: 'v2.2.3'
+
+jobs:
+  apply-patches:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout patch repository
+        uses: actions/checkout@v4
+
+      - name: Resolve LobeHub tag
+        id: resolve
+        run: |
+          if [[ -n "${{ github.event.inputs.lobehub_tag }}" ]]; then
+            echo "tag=${{ github.event.inputs.lobehub_tag }}" >> "$GITHUB_OUTPUT"
+          else
+            TAG=$(curl -sL "https://api.github.com/repos/lobehub/lobe-chat/releases/latest" \
+              | jq -r '.tag_name // empty')
+            if [[ -z "$TAG" || "$TAG" == "null" ]]; then
+              echo "❌ Failed to resolve latest LobeHub tag"
+              exit 1
+            fi
+            echo "tag=$TAG" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Check minimum version
+        run: |
+          TAG="${{ steps.resolve.outputs.tag }}"
+          MIN="${{ env.MIN_LOBEHUB_VERSION }}"
+          TAG_NUM="${TAG#v}"
+          MIN_NUM="${MIN#v}"
+          HIGHEST=$(printf '%s\n' "$TAG_NUM" "$MIN_NUM" | sort -V | tail -1)
+          if [ "$HIGHEST" != "$TAG_NUM" ]; then
+            echo "❌ LobeHub tag $TAG is lower than minimum supported version $MIN"
+            exit 1
+          fi
+          echo "✅ LobeHub tag $TAG meets minimum version $MIN"
+
+      - name: Clone LobeHub at ${{ steps.resolve.outputs.tag }}
+        run: |
+          git clone --depth 1 --branch "${{ steps.resolve.outputs.tag }}" \
+            https://github.com/lobehub/lobe-chat.git lobehub
+          echo "Cloned lobehub/lobe-chat@${{ steps.resolve.outputs.tag }}"
+
+      - name: Apply patches
+        run: |
+          bash scripts/apply-patches.sh "$PWD/lobehub"
+          echo "=== Verification ==="
+          if [ -f lobehub/apps/server/src/modules/S3/index.ts ]; then
+            echo "--- S3 module (v2.2+ structure) ---"
+            grep -c "setCredentialProvider" lobehub/apps/server/src/modules/S3/index.ts
+            echo "--- Credential store ---"
+            ls -la lobehub/apps/server/src/patches/
+          else
+            echo "--- S3 module (legacy structure) ---"
+            grep -c "setCredentialProvider" lobehub/src/server/modules/S3/index.ts
+            echo "--- Credential store ---"
+            ls -la lobehub/src/server/patches/
+          fi
+
+      - name: Upload patched source as artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: patched-lobehub-${{ steps.resolve.outputs.tag }}
+          path: lobehub/
+          retention-days: 7
