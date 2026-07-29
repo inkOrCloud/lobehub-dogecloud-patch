@@ -29,7 +29,7 @@ jobs:
         id: archive
         run: |
           ARCHIVE_NAME="lobehub-patched-${{ github.event.inputs.lobehub_tag }}.tar.gz"
-          tar -czf "$ARCHIVE_NAME" .
+          tar -czf "$ARCHIVE_NAME" --ignore-failed-read -C lobehub .
           echo "archive=$ARCHIVE_NAME" >> "$GITHUB_OUTPUT"
           echo "Created $ARCHIVE_NAME ($(du -h "$ARCHIVE_NAME" | cut -f1))"
 
@@ -60,6 +60,7 @@ jobs:
           ## Usage
           \`\`\`bash
           tar -xzf $ARCHIVE
+          cd lobehub
           docker build -t lobehub-patched -f Dockerfile .
           \`\`\`
 

@@ -62,7 +62,7 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: patched-source-${{ steps.resolve.outputs.tag }}
-          path: lobehub/
+          path: lobehub
           retention-days: 7
 
       - name: Trigger C - Release Source
