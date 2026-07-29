@@ -1,95 +1,43 @@
-name: Release Patched Source
+name: C - Release Source
 
 on:
-  release:
-    types: [published]
   workflow_dispatch:
     inputs:
       lobehub_tag:
-        description: 'LobeHub tag to release (e.g. v1.30.0)'
-        required: false
-        default: ''
+        description: 'LobeHub tag that was patched (e.g. v1.30.0)'
+        required: true
+      artifact_run_id:
+        description: 'Workflow run ID of B that produced the artifact'
+        required: true
 
-env:
-  MIN_LOBEHUB_VERSION: 'v2.2.3'
+permissions:
+  actions: read
+  contents: write
 
 jobs:
   release-source:
     runs-on: ubuntu-latest
     steps:
-      - name: Checkout patch repository
-        uses: actions/checkout@v4
-
-      - name: Resolve LobeHub tag
-        id: resolve
-        run: |
-          if [[ -n "${{ github.event.inputs.lobehub_tag }}" ]]; then
-            echo "tag=${{ github.event.inputs.lobehub_tag }}" >> "$GITHUB_OUTPUT"
-          else
-            TAG=$(curl -sL "https://api.github.com/repos/lobehub/lobe-chat/releases/latest" \
-              | jq -r '.tag_name // empty')
-            if [[ -z "$TAG" || "$TAG" == "null" ]]; then
-              echo "❌ Failed to resolve latest LobeHub tag"
-              exit 1
-            fi
-            echo "tag=$TAG" >> "$GITHUB_OUTPUT"
-          fi
-
-      - name: Check minimum version
-        run: |
-          TAG="${{ steps.resolve.outputs.tag }}"
-          MIN="${{ env.MIN_LOBEHUB_VERSION }}"
-          TAG_NUM="${TAG#v}"
-          MIN_NUM="${MIN#v}"
-          HIGHEST=$(printf '%s\n' "$TAG_NUM" "$MIN_NUM" | sort -V | tail -1)
-          if [ "$HIGHEST" != "$TAG_NUM" ]; then
-            echo "❌ LobeHub tag $TAG is lower than minimum supported version $MIN"
-            exit 1
-          fi
-          echo "✅ LobeHub tag $TAG meets minimum version $MIN"
-
-      - name: Clone LobeHub at ${{ steps.resolve.outputs.tag }}
-        run: |
-          git clone --depth 1 --branch "${{ steps.resolve.outputs.tag }}" \
-            https://github.com/lobehub/lobe-chat.git lobehub
-          echo "Cloned lobehub/lobe-chat@${{ steps.resolve.outputs.tag }}"
-
-      - name: Apply patches
-        run: |
-          bash scripts/apply-patches.sh "$PWD/lobehub"
-          echo "=== Verification ==="
-          if [ -f lobehub/apps/server/src/modules/S3/index.ts ]; then
-            grep -c "setCredentialProvider" lobehub/apps/server/src/modules/S3/index.ts
-            ls -la lobehub/apps/server/src/patches/
-          else
-            grep -c "setCredentialProvider" lobehub/src/server/modules/S3/index.ts
-            ls -la lobehub/src/server/patches/
-          fi
+      - name: Download patched source artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: patched-source-${{ github.event.inputs.lobehub_tag }}
+          run-id: ${{ github.event.inputs.artifact_run_id }}
+          github-token: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Create patched source archive
         id: archive
         run: |
-          ARCHIVE_NAME="lobehub-patched-${{ steps.resolve.outputs.tag }}.tar.gz"
-          tar -czf "$ARCHIVE_NAME" -C lobehub .
+          ARCHIVE_NAME="lobehub-patched-${{ github.event.inputs.lobehub_tag }}.tar.gz"
+          tar -czf "$ARCHIVE_NAME" .
           echo "archive=$ARCHIVE_NAME" >> "$GITHUB_OUTPUT"
           echo "Created $ARCHIVE_NAME ($(du -h "$ARCHIVE_NAME" | cut -f1))"
 
-      - name: Upload archive to release (release trigger)
-        if: github.event_name == 'release'
+      - name: Create or update GitHub Release
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          gh release upload "${{ github.event.release.tag_name }}" \
-            "${{ steps.archive.outputs.archive }}" \
-            --clobber
-          echo "✅ Uploaded to release ${{ github.event.release.tag_name }}"
-
-      - name: Create release and upload archive (manual trigger)
-        if: github.event_name == 'workflow_dispatch'
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: |
-          TAG="${{ steps.resolve.outputs.tag }}"
+          TAG="${{ github.event.inputs.lobehub_tag }}"
           RELEASE_TAG="patched-$TAG"
           ARCHIVE="${{ steps.archive.outputs.archive }}"
 

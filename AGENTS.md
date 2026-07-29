@@ -9,9 +9,10 @@
 ├── scripts/
 │   └── apply-patches.sh                  # One-click script to apply patches to a LobeHub checkout
 ├── .github/workflows/
-│   ├── apply-patches.yml                 # Clone LobeHub + apply patches + upload artifact
-│   ├── build-image.yml                   # Clone + patch + build Docker image + push to GHCR
-│   └── release-source.yml                # Clone + patch + archive tar.gz + publish to Releases
+│   ├── monitor-lobehub.yml               # A: 监控 LobeHub 新 tag → 触发 B
+│   ├── apply-patches.yml                 # B: 克隆 + 打补丁 + 上传 artifact → 触发 C/D
+│   ├── release-source.yml                # C: 从 artifact 生成 tar.gz → 发布到 Releases
+│   └── build-image.yml                   # D: 从 artifact 构建 Docker 镜像 → 推送 GHCR
 ├── README.md                             # Full documentation
 └── AGENTS.md                             # This file
 ```
@@ -20,25 +21,50 @@
 - **`scripts/`** — Automation scripts for applying patches locally.
 - **`.github/workflows/`** — GitHub Actions CI/CD workflows.
 
-## GitHub Actions Workflows
+## GitHub Actions Workflows（四阶段流水线架构）
 
-### `apply-patches.yml` — Apply Patches
-- **Trigger**: `workflow_dispatch` (manual, optional `lobehub_tag` input)
-- **What it does**: Resolves LobeHub tag → clones LobeHub → applies patches → uploads patched source as a build artifact (7-day retention)
-- **Use case**: For downstream tasks that need the patched source without building a Docker image
+四条工作流按 **A → B → C/D** 链式触发，形成完整的自动化流水线：
 
-### `build-image.yml` — Build Docker Image
-- **Trigger**: `release` published, or `workflow_dispatch` (manual, optional `lobehub_tag` input)
-- **What it does**: Resolves LobeHub tag → clones LobeHub → applies patches → builds Docker image → pushes to `ghcr.io/inkOrCloud/lobehub-dogecloud-patch`
-- **Tags pushed**: `latest`, `<semver>`, `<major>.<minor>`
-- **Secrets**: `GHCR_PAT` (optional, falls back to `GITHUB_TOKEN`)
-- **This replaces the original monolithic `build-on-release.yml`**
+```
+A (Monitor LobeHub)
+  │   每 6 小时检查 lobehub/lobe-chat 新 tag
+  │   发现新 tag → 触发 B
+  ▼
+B (Apply Patches)
+  │   克隆指定 tag 源码 → 应用补丁 → 上传 artifact
+  │   触发 C + D（并行）
+  ├──────────────────┐
+  ▼                  ▼
+C (Release Source)  D (Build Docker Image)
+  从 artifact 打包    从 artifact 构建
+  tar.gz 并发布到      Docker 镜像并推
+  GitHub Releases     送到 GHCR
+```
 
-### `release-source.yml` — Release Patched Source
-- **Trigger**: `release` published, or `workflow_dispatch` (manual, optional `lobehub_tag` input)
-- **What it does**: Resolves LobeHub tag → clones LobeHub → applies patches → creates `tar.gz` archive → uploads to GitHub Releases
-- **Release naming** (manual trigger): `patched-<lobehub_tag>` (e.g. `patched-v2.2.3`)
-- **Use case**: Distributing the patched source code for users who want to inspect or build manually
+### A — `monitor-lobehub.yml`（监控触发器）
+- **触发方式**: `schedule`（每 6 小时）或 `workflow_dispatch`（手动）
+- **功能**: 检查 `lobehub/lobe-chat` 最新 release tag → 比对是否已处理过（查 Release + 近期 run）→ 若为新 tag 则触发 B
+- **权限**: `contents: read`, `workflows: write`
+
+### B — `apply-patches.yml`（打补丁 + 分发）
+- **触发方式**: `workflow_dispatch`（由 A 触发，也支持手动）
+- **输入**: `lobehub_tag`（必填）
+- **功能**: 校验最低版本 → 克隆 LobeHub → 应用补丁 → 上传 artifact（7天保留）→ 触发 C + D
+- **权限**: `contents: read`, `actions: write`, `workflows: write`
+
+### C — `release-source.yml`（发布源码）
+- **触发方式**: `workflow_dispatch`（由 B 触发，也支持手动）
+- **输入**: `lobehub_tag`, `artifact_run_id`
+- **功能**: 从 B 的 run 下载 artifact → 打包 tar.gz → 创建/更新 GitHub Release（tag: `patched-<tag>`）
+- **权限**: `actions: read`, `contents: write`
+
+### D — `build-image.yml`（构建 Docker 镜像）
+- **触发方式**: `workflow_dispatch`（由 B 触发，也支持手动）
+- **输入**: `lobehub_tag`, `artifact_run_id`
+- **功能**: 从 B 的 run 下载 artifact → 构建 Docker 镜像 → 推送到 `ghcr.io/inkOrCloud/lobehub-dogecloud-patch`
+- **Tags 推送**: `latest`, `<semver>`, `<major>.<minor>`
+- **Secrets**: `GHCR_PAT`（可选，fallback 到 `GITHUB_TOKEN`）
+- **权限**: `actions: read`, `contents: read`, `packages: write`
 
 ## Build, Test, and Development Commands
 
@@ -84,18 +110,23 @@ fix: correct patch file paths for git apply
 
 ## CI/CD & Release Process
 
-Releases are triggered by publishing a GitHub Release, or manually via `workflow_dispatch` with a specific LobeHub tag. The three CI workflows handle different aspects:
+### 触发流程
 
-1. **`apply-patches.yml`** — Just patches the source and makes it available as an artifact.
-2. **`build-image.yml`** — Patches and builds a Docker image, pushing to GHCR. This is the primary release workflow.
-3. **`release-source.yml`** — Patches and publishes the source as a `tar.gz` archive to GitHub Releases.
+1. **自动**: A 每 6 小时检查 LobeHub 新 tag → 自动触发 B → B 触发 C + D
+2. **手动**: 直接 `workflow_dispatch` 触发 B（指定 `lobehub_tag`），B 会自动触发 C/D
+3. **独立运行**: 也可单独触发 C 或 D（需提供 `lobehub_tag` 和 `artifact_run_id`）
 
-Tagged releases use semver (`v1.2.3`); `latest` is always pushed on each build.
+### artifact 传递机制
 
-### Which workflow to run?
+- B 将打补丁后的源码上传为 artifact（`patched-source-<tag>`，7天保留）
+- C 和 D 通过 `artifact_run_id` 和 artifact name 从 B 的 run 下载
+- 确保 C/D 在 B 的 artifact 过期前运行（7天窗口）
 
-| Goal | Workflow |
+### 各场景选择
+
+| 目标 | 触发方式 |
 |------|----------|
-| Just want the patched source artifact | `apply-patches.yml` |
-| Need a Docker image | `build-image.yml` |
-| Want to distribute the source via Releases | `release-source.yml` |
+| 自动追踪 LobeHub 新版本 | A 定时运行（无需手动操作） |
+| 指定 tag 打补丁并构建全部 | 手动触发 B（输入 lobehub_tag） |
+| 只想发布源码到 Releases | 手动触发 C（输入 tag + run_id） |
+| 只想构建 Docker 镜像 | 手动触发 D（输入 tag + run_id） |

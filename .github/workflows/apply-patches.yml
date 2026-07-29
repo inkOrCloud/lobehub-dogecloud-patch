@@ -1,41 +1,33 @@
-name: Apply Patches
+name: B - Apply Patches
 
 on:
   workflow_dispatch:
     inputs:
       lobehub_tag:
         description: 'LobeHub tag to patch (e.g. v1.30.0)'
-        required: false
-        default: ''
+        required: true
 
 env:
   MIN_LOBEHUB_VERSION: 'v2.2.3'
 
+permissions:
+  contents: read
+  actions: write
+  workflows: write
+
 jobs:
-  apply-patches:
+  patch-and-trigger:
     runs-on: ubuntu-latest
     steps:
-      - name: Checkout patch repository
-        uses: actions/checkout@v4
+      - uses: actions/checkout@v4
 
-      - name: Resolve LobeHub tag
+      - name: Validate LobeHub tag
         id: resolve
         run: |
-          if [[ -n "${{ github.event.inputs.lobehub_tag }}" ]]; then
-            echo "tag=${{ github.event.inputs.lobehub_tag }}" >> "$GITHUB_OUTPUT"
-          else
-            TAG=$(curl -sL "https://api.github.com/repos/lobehub/lobe-chat/releases/latest" \
-              | jq -r '.tag_name // empty')
-            if [[ -z "$TAG" || "$TAG" == "null" ]]; then
-              echo "❌ Failed to resolve latest LobeHub tag"
-              exit 1
-            fi
-            echo "tag=$TAG" >> "$GITHUB_OUTPUT"
-          fi
+          TAG="${{ github.event.inputs.lobehub_tag }}"
+          echo "tag=$TAG" >> "$GITHUB_OUTPUT"
 
-      - name: Check minimum version
-        run: |
-          TAG="${{ steps.resolve.outputs.tag }}"
+          # 检查最低版本
           MIN="${{ env.MIN_LOBEHUB_VERSION }}"
           TAG_NUM="${TAG#v}"
           MIN_NUM="${MIN#v}"
@@ -71,6 +63,26 @@ jobs:
       - name: Upload patched source as artifact
         uses: actions/upload-artifact@v4
         with:
-          name: patched-lobehub-${{ steps.resolve.outputs.tag }}
+          name: patched-source-${{ steps.resolve.outputs.tag }}
           path: lobehub/
           retention-days: 7
+
+      - name: Trigger C - Release Source
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          gh workflow run "C - Release Source" \
+            -f lobehub_tag="${{ steps.resolve.outputs.tag }}" \
+            -f artifact_run_id="${{ github.run_id }}" \
+            --ref "${{ github.ref_name }}"
+          echo "✅ Triggered C workflow"
+
+      - name: Trigger D - Build Docker Image
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          gh workflow run "D - Build Docker Image" \
+            -f lobehub_tag="${{ steps.resolve.outputs.tag }}" \
+            -f artifact_run_id="${{ github.run_id }}" \
+            --ref "${{ github.ref_name }}"
+          echo "✅ Triggered D workflow"

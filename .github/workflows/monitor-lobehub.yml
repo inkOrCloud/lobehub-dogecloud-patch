@@ -1,0 +1,59 @@
+name: A - Monitor LobeHub Releases
+
+on:
+  schedule:
+    - cron: '0 */6 * * *'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  workflows: write
+
+jobs:
+  check-and-trigger:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Fetch latest LobeHub release tag
+        id: fetch
+        run: |
+          LATEST_TAG=$(curl -sL "https://api.github.com/repos/lobehub/lobe-chat/releases/latest" \
+            | jq -r '.tag_name // empty')
+          if [[ -z "$LATEST_TAG" || "$LATEST_TAG" == "null" ]]; then
+            echo "❌ Failed to resolve latest LobeHub tag"
+            exit 1
+          fi
+          echo "Latest LobeHub tag: $LATEST_TAG"
+          echo "tag=$LATEST_TAG" >> "$GITHUB_OUTPUT"
+
+      - name: Check if this tag has already been processed
+        id: check
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          TAG="${{ steps.fetch.outputs.tag }}"
+          if gh release view "patched-$TAG" --json name 2>/dev/null; then
+            echo "✅ Release patched-$TAG already exists, skipping"
+            echo "should_run=false" >> "$GITHUB_OUTPUT"
+          else
+            RECENT=$(gh run list --workflow "B - Apply Patches" --limit 5 \
+              --json displayTitle,databaseId --jq '.[].displayTitle')
+            if echo "$RECENT" | grep -qF "$TAG"; then
+              echo "✅ Workflow for $TAG already in progress, skipping"
+              echo "should_run=false" >> "$GITHUB_OUTPUT"
+            else
+              echo "🆕 New tag $TAG detected, triggering build pipeline"
+              echo "should_run=true" >> "$GITHUB_OUTPUT"
+            fi
+          fi
+
+      - name: Trigger B - Apply Patches
+        if: steps.check.outputs.should_run == 'true'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          gh workflow run "B - Apply Patches" \
+            -f lobehub_tag="${{ steps.fetch.outputs.tag }}" \
+            --ref "${{ github.ref_name }}"
+          echo "✅ Triggered B for ${{ steps.fetch.outputs.tag }}"
