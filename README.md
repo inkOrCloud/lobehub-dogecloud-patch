@@ -61,7 +61,7 @@ s3Endpoint / s3Bucket 决定方式:
 | `DOGECLOUD_CHANNEL` | `OSS_FULL` | 密钥类型：`OSS_FULL` / `OSS_UPLOAD` / `OSS_CUSTOM` |
 | `DOGECLOUD_SCOPES` | `*` | 权限范围，多个用逗号分隔 |
 | `DOGECLOUD_TTL` | `7200` | 临时密钥有效期（秒），最大 7200 |
-| `S3_ENDPOINT` | — | **手动覆盖** s3Endpoint（DogeCloud 可能变更后端时使用） |
+| `S3_ENDPOINT` | — | **手动覆盖** s3Endpoint |
 | `S3_BUCKET` | — | **手动覆盖** s3Bucket |
 
 > 正常情况下不需要设 `S3_ENDPOINT` 和 `S3_BUCKET`，首次 API 调用会自动获取。
