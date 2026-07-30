@@ -29,27 +29,27 @@ fi
 # 如果不存在则回退到旧版 src/server/patches
 if [ -d "apps/server/src" ]; then
   DEST="apps/server/src/patches"
-  ENTRY_FILE="apps/server/src/hono/index.ts"
+  S3_FILE="apps/server/src/modules/S3/index.ts"
 else
   DEST="src/server/patches"
-  ENTRY_FILE="src/server/hono/index.ts"
+  S3_FILE="src/server/modules/S3/index.ts"
 fi
 mkdir -p "$DEST"
 cp "$PATCHES_DIR/dogecloud-credential-store.ts" "$DEST/"
 echo "✓ 已复制 dogecloud-credential-store.ts → $DEST/"
 
-# ── 自动添加 import 到服务端入口文件 ─────────────────────────────────
-if [ -f "$ENTRY_FILE" ]; then
-  if ! grep -q "dogecloud-credential-store" "$ENTRY_FILE"; then
-    # 在 import honoApp 之后插入凭证存储的 import
-    sed -i "\|^import { Hono } from 'hono';$|a import '../patches/dogecloud-credential-store';" "$ENTRY_FILE"
-    echo "✓ 已添加 import → $ENTRY_FILE"
+# ── 自动添加 import 到 S3 模块（编译进 Docker 镜像）───────────────────
+if [ -f "$S3_FILE" ]; then
+  if ! grep -q "dogecloud-credential-store" "$S3_FILE"; then
+    # 在 credential provider hook 之后插入凭证存储的 import
+    sed -i "/^import { YEAR } from '@/utils\/units';$/a import '../../patches/dogecloud-credential-store';" "$S3_FILE"
+    echo "✓ 已添加 import → $S3_FILE"
   else
-    echo "ℹ import 已存在于 $ENTRY_FILE，跳过"
+    echo "ℹ import 已存在于 $S3_FILE，跳过"
   fi
 else
-  echo "⚠ 未找到 $ENTRY_FILE，请手动在服务端入口文件中添加:"
-  echo "  import '../patches/dogecloud-credential-store';"
+  echo "⚠ 未找到 $S3_FILE，请手动在 S3 模块中添加:"
+  echo "  import '../../patches/dogecloud-credential-store';"
 fi
 
 # ── 完成 ──────────────────────────────────────────────────────────────

@@ -63,7 +63,7 @@ jobs:
             echo "--- Credential store file ---"
             ls -la lobehub/apps/server/src/patches/
             echo "--- Entry point import ---"
-            grep -c "dogecloud-credential-store" lobehub/apps/server/src/hono/index.ts || \
+            grep -c "dogecloud-credential-store" lobehub/apps/server/src/modules/S3/index.ts || \
               { echo "❌ Import not found in index.ts"; exit 1; }
             echo "✓ All checks passed"
           else
@@ -72,7 +72,7 @@ jobs:
             echo "--- Credential store file ---"
             ls -la lobehub/src/server/patches/
             echo "--- Entry point import ---"
-            grep -c "dogecloud-credential-store" lobehub/src/server/hono/index.ts || \
+            grep -c "dogecloud-credential-store" lobehub/src/server/modules/S3/index.ts || \
               { echo "❌ Import not found in index.ts"; exit 1; }
             echo "✓ All checks passed"
           fi
