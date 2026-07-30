@@ -41,17 +41,26 @@ jobs:
       - name: Apply patches
         run: |
           bash scripts/apply-patches.sh "$PWD/lobehub"
+          echo ""
           echo "=== Verification ==="
           if [ -f lobehub/apps/server/src/modules/S3/index.ts ]; then
             echo "--- S3 module ---"
             grep -c "setCredentialProvider" lobehub/apps/server/src/modules/S3/index.ts
-            echo "--- Credential store ---"
+            echo "--- Credential store file ---"
             ls -la lobehub/apps/server/src/patches/
+            echo "--- Entry point import ---"
+            grep -c "dogecloud-credential-store" lobehub/apps/server/src/hono/standalone.ts || \
+              { echo "❌ Import not found in standalone.ts"; exit 1; }
+            echo "✓ All checks passed"
           else
             echo "--- S3 module (legacy) ---"
             grep -c "setCredentialProvider" lobehub/src/server/modules/S3/index.ts
-            echo "--- Credential store ---"
+            echo "--- Credential store file ---"
             ls -la lobehub/src/server/patches/
+            echo "--- Entry point import ---"
+            grep -c "dogecloud-credential-store" lobehub/src/server/hono/standalone.ts || \
+              { echo "❌ Import not found in standalone.ts"; exit 1; }
+            echo "✓ All checks passed"
           fi
 
       - name: Upload patched source as artifact
