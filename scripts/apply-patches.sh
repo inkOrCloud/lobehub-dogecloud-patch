@@ -42,7 +42,7 @@ echo "✓ 已复制 dogecloud-credential-store.ts → $DEST/"
 if [ -f "$S3_FILE" ]; then
   if ! grep -q "dogecloud-credential-store" "$S3_FILE"; then
     # 在 credential provider hook 之后插入凭证存储的 import
-    sed -i "/^import { YEAR } from '@/utils\/units';$/a import '../../patches/dogecloud-credential-store';" "$S3_FILE"
+    sed -i "\|^import { YEAR }|a import ../../patches/dogecloud-credential-store;" "\$S3_FILE"
     echo "✓ 已添加 import → $S3_FILE"
   else
     echo "ℹ import 已存在于 $S3_FILE，跳过"
