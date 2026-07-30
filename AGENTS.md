@@ -3,13 +3,14 @@
 ## Project Structure & Module Organization
 
 ```
+├── VERSION                                # 补丁版本号 (v1, v2, ...)
 ├── patches/
 │   ├── s3-credential-hook.patch          # Patch to add setCredentialProvider hook in LobeHub S3 module
 │   └── dogecloud-credential-store.ts     # DogeCloud STS credential provider (copied into LobeHub at build)
 ├── scripts/
 │   └── apply-patches.sh                  # One-click script to apply patches to a LobeHub checkout
 ├── .github/workflows/
-│   ├── monitor-lobehub.yml               # A: 监控 LobeHub 新 tag → 触发 B
+│   ├── monitor-lobehub.yml               # A: 监控 LobeHub 新 tag / VERSION 变更 → 触发 B
 │   ├── apply-patches.yml                 # B: 克隆 + 打补丁 + 上传 artifact → 触发 C/D
 │   ├── release-source.yml                # C: 从 artifact 生成 tar.gz → 发布到 Releases
 │   └── build-image.yml                   # D: 从 artifact 构建 Docker 镜像 → 推送 GHCR
@@ -27,42 +28,48 @@
 
 ```
 A (Monitor LobeHub)
-  │   每 6 小时检查 lobehub/lobe-chat 新 tag
-  │   发现新 tag → 触发 B
+  │   触发方式:
+  │   ① 每 6 小时检查 lobehub/lobe-chat 新 tag
+  │   ② VERSION 文件变更（push 到 main）
+  │   发现新 tag 或版本更新 → 触发 B（传入 lobehub_tag + patch_version）
   ▼
 B (Apply Patches)
   │   克隆指定 tag 源码 → 应用补丁 → 上传 artifact
-  │   触发 C + D（并行）
+  │   触发 C + D（并行，传入 lobehub_tag + patch_version）
   ├──────────────────┐
   ▼                  ▼
 C (Release Source)  D (Build Docker Image)
   从 artifact 打包    从 artifact 构建
   tar.gz 并发布到      Docker 镜像并推
   GitHub Releases     送到 GHCR
+  tag: patched-{tag}-{pv}  tag: {tag}-{pv}, latest
 ```
 
 ### A — `monitor-lobehub.yml`（监控触发器）
-- **触发方式**: `schedule`（每 6 小时）或 `workflow_dispatch`（手动）
-- **功能**: 检查 `lobehub/lobe-chat` 最新 release tag → 比对是否已处理过（查 Release + 近期 run）→ 若为新 tag 则触发 B
-- **权限**: `contents: read`, `workflows: write`
+- **触发方式**: `schedule`（每 6 小时）、`push`（VERSION 文件变更）或 `workflow_dispatch`（手动）
+- **功能**: 
+  - 定时运行: 检查 `lobehub/lobe-chat` 最新 release tag → 比对是否已处理过（查 Release）→ 若为新 tag 则触发 B
+  - Push 触发: VERSION 文件变更时自动触发，使用最新 LobeHub tag + 当前 VERSION
+- **输入传递**: 将 `lobehub_tag`（最新 tag）和 `patch_version`（VERSION 内容）传给 B
+- **权限**: `contents: read`, `actions: write`
 
 ### B — `apply-patches.yml`（打补丁 + 分发）
 - **触发方式**: `workflow_dispatch`（由 A 触发，也支持手动）
-- **输入**: `lobehub_tag`（必填）
-- **功能**: 校验最低版本 → 克隆 LobeHub → 应用补丁 → 上传 artifact（7天保留）→ 触发 C + D
-- **权限**: `contents: read`, `actions: write`, `workflows: write`
+- **输入**: `lobehub_tag`（必填）, `patch_version`（可选，默认从 VERSION 文件读取）
+- **功能**: 校验最低版本 → 克隆 LobeHub → 应用补丁 → 上传 artifact（7天保留，命名含版本号）→ 触发 C + D（传递版本信息）
+- **权限**: `contents: read`, `actions: write`
 
 ### C — `release-source.yml`（发布源码）
 - **触发方式**: `workflow_dispatch`（由 B 触发，也支持手动）
-- **输入**: `lobehub_tag`, `artifact_run_id`
-- **功能**: 从 B 的 run 下载 artifact → 打包 tar.gz → 创建/更新 GitHub Release（tag: `patched-<tag>`）
+- **输入**: `lobehub_tag`, `patch_version`, `artifact_run_id`
+- **功能**: 从 B 的 run 下载 artifact → 打包 tar.gz → 创建/更新 GitHub Release（tag: `patched-<tag>-<patch_version>`）
 - **权限**: `actions: read`, `contents: write`
 
 ### D — `build-image.yml`（构建 Docker 镜像）
 - **触发方式**: `workflow_dispatch`（由 B 触发，也支持手动）
-- **输入**: `lobehub_tag`, `artifact_run_id`
+- **输入**: `lobehub_tag`, `patch_version`, `artifact_run_id`
 - **功能**: 从 B 的 run 下载 artifact → 构建 Docker 镜像 → 推送到 `ghcr.io/inkOrCloud/lobehub-dogecloud-patch`
-- **Tags 推送**: `latest`, `<semver>`, `<major>.<minor>`
+- **Tags 推送**: `<lobehub-tag>-<patch-version>`, `latest`
 - **Secrets**: `GHCR_PAT`（可选，fallback 到 `GITHUB_TOKEN`）
 - **权限**: `actions: read`, `contents: read`, `packages: write`
 
@@ -118,7 +125,7 @@ fix: correct patch file paths for git apply
 
 ### artifact 传递机制
 
-- B 将打补丁后的源码上传为 artifact（`patched-source-<tag>`，7天保留）
+- B 将打补丁后的源码上传为 artifact（`patched-source-<tag>-<patch_version>`，7天保留）
 - C 和 D 通过 `artifact_run_id` 和 artifact name 从 B 的 run 下载
 - 确保 C/D 在 B 的 artifact 过期前运行（7天窗口）
 
@@ -127,6 +134,7 @@ fix: correct patch file paths for git apply
 | 目标 | 触发方式 |
 |------|----------|
 | 自动追踪 LobeHub 新版本 | A 定时运行（无需手动操作） |
-| 指定 tag 打补丁并构建全部 | 手动触发 B（输入 lobehub_tag） |
-| 只想发布源码到 Releases | 手动触发 C（输入 tag + run_id） |
-| 只想构建 Docker 镜像 | 手动触发 D（输入 tag + run_id） |
+| 补丁版本更新时重新构建 | 修改 VERSION → push 到 main（自动触发 A → B → C/D） |
+| 指定 tag 打补丁并构建全部 | 手动触发 B（输入 lobehub_tag + patch_version） |
+| 只想发布源码到 Releases | 手动触发 C（输入 tag + patch_version + run_id） |
+| 只想构建 Docker 镜像 | 手动触发 D（输入 tag + patch_version + run_id） |

@@ -1,6 +1,9 @@
 name: A - Monitor LobeHub Releases
 
 on:
+  push:
+    branches: [main]
+    paths: ['VERSION']
   schedule:
     - cron: '0 */6 * * *'
   workflow_dispatch:
@@ -15,6 +18,13 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      - name: Read patch version
+        id: version
+        run: |
+          V=$(cat VERSION 2>/dev/null || echo "v0")
+          echo "Patch version: $V"
+          echo "value=$V" >> "$GITHUB_OUTPUT"
+
       - name: Fetch latest LobeHub release tag
         id: fetch
         run: |
@@ -27,25 +37,20 @@ jobs:
           echo "Latest LobeHub tag: $LATEST_TAG"
           echo "tag=$LATEST_TAG" >> "$GITHUB_OUTPUT"
 
-      - name: Check if this tag has already been processed
+      - name: Check if already processed
         id: check
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           TAG="${{ steps.fetch.outputs.tag }}"
-          if gh release view "patched-$TAG" --json name 2>/dev/null; then
-            echo "✅ Release patched-$TAG already exists, skipping"
+          PV="${{ steps.version.outputs.value }}"
+          RELEASE_TAG="patched-${TAG}-${PV}"
+          if gh release view "$RELEASE_TAG" --json name 2>/dev/null; then
+            echo "✅ Release $RELEASE_TAG already exists, skipping"
             echo "should_run=false" >> "$GITHUB_OUTPUT"
           else
-            RECENT=$(gh run list --workflow "B - Apply Patches" --limit 5 \
-              --json displayTitle,databaseId --jq '.[].displayTitle')
-            if echo "$RECENT" | grep -qF "$TAG"; then
-              echo "✅ Workflow for $TAG already in progress, skipping"
-              echo "should_run=false" >> "$GITHUB_OUTPUT"
-            else
-              echo "🆕 New tag $TAG detected, triggering build pipeline"
-              echo "should_run=true" >> "$GITHUB_OUTPUT"
-            fi
+            echo "🆕 New combo: $TAG / $PV, triggering build pipeline"
+            echo "should_run=true" >> "$GITHUB_OUTPUT"
           fi
 
       - name: Trigger B - Apply Patches
@@ -55,5 +60,6 @@ jobs:
         run: |
           gh workflow run "B - Apply Patches" \
             -f lobehub_tag="${{ steps.fetch.outputs.tag }}" \
+            -f patch_version="${{ steps.version.outputs.value }}" \
             --ref "${{ github.ref_name }}"
-          echo "✅ Triggered B for ${{ steps.fetch.outputs.tag }}"
+          echo "✅ Triggered B for ${{ steps.fetch.outputs.tag }} / ${{ steps.version.outputs.value }}"

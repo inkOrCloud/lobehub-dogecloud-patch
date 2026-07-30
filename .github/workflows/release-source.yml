@@ -6,6 +6,9 @@ on:
       lobehub_tag:
         description: 'LobeHub tag that was patched (e.g. v1.30.0)'
         required: true
+      patch_version:
+        description: 'Patch version (e.g. v1)'
+        required: true
       artifact_run_id:
         description: 'Workflow run ID of B that produced the artifact'
         required: true
@@ -18,13 +21,12 @@ jobs:
   release-source:
     runs-on: ubuntu-latest
     steps:
-      # checkout 为 gh release create 提供 git 上下文
       - uses: actions/checkout@v4
 
       - name: Download patched source artifact
         uses: actions/download-artifact@v4
         with:
-          name: patched-source-${{ github.event.inputs.lobehub_tag }}
+          name: patched-source-${{ github.event.inputs.lobehub_tag }}-${{ github.event.inputs.patch_version }}
           run-id: ${{ github.event.inputs.artifact_run_id }}
           path: ./lobehub/
           github-token: ${{ secrets.GITHUB_TOKEN }}
@@ -32,7 +34,9 @@ jobs:
       - name: Create patched source archive
         id: archive
         run: |
-          ARCHIVE_NAME="lobehub-patched-${{ github.event.inputs.lobehub_tag }}.tar.gz"
+          TAG="${{ github.event.inputs.lobehub_tag }}"
+          PV="${{ github.event.inputs.patch_version }}"
+          ARCHIVE_NAME="lobehub-patched-${TAG}-${PV}.tar.gz"
           tar -czf "$ARCHIVE_NAME" --ignore-failed-read -C lobehub .
           echo "archive=$ARCHIVE_NAME" >> "$GITHUB_OUTPUT"
           echo "Created $ARCHIVE_NAME ($(du -h "$ARCHIVE_NAME" | cut -f1))"
@@ -42,14 +46,15 @@ jobs:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           TAG="${{ github.event.inputs.lobehub_tag }}"
-          RELEASE_TAG="patched-$TAG"
+          PV="${{ github.event.inputs.patch_version }}"
+          RELEASE_TAG="patched-${TAG}-${PV}"
           ARCHIVE="${{ steps.archive.outputs.archive }}"
           if gh release view "$RELEASE_TAG" --json name 2>/dev/null; then
             gh release upload "$RELEASE_TAG" "$ARCHIVE" --clobber
           else
             gh release create "$RELEASE_TAG" \
-              --title "Patched LobeHub $TAG" \
-              --notes "Patched source code of LobeHub **$TAG** with DogeCloud S3 credential support.\n\nSee the [README](https://github.com/${{ github.repository }}) for configuration." \
+              --title "Patched LobeHub $TAG (patch $PV)" \
+              --notes "Patched source code of LobeHub **$TAG** with DogeCloud S3 credential support.\nPatch version **$PV**.\n\nSee the [README](https://github.com/${{ github.repository }}) for configuration." \
               "$ARCHIVE"
           fi
           echo "✅ Published $RELEASE_TAG"

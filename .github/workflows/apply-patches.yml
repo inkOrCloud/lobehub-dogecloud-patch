@@ -6,6 +6,10 @@ on:
       lobehub_tag:
         description: 'LobeHub tag to patch (e.g. v1.30.0)'
         required: true
+      patch_version:
+        description: 'Patch version (e.g. v1). Defaults to VERSION file content'
+        required: false
+        default: ''
 
 env:
   MIN_LOBEHUB_VERSION: 'v2.2.3'
@@ -19,6 +23,16 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+
+      - name: Resolve patch version
+        id: patch
+        run: |
+          PV="${{ github.event.inputs.patch_version }}"
+          if [[ -z "$PV" ]]; then
+            PV=$(cat VERSION 2>/dev/null || echo "v0")
+          fi
+          echo "Patch version: $PV"
+          echo "value=$PV" >> "$GITHUB_OUTPUT"
 
       - name: Validate LobeHub tag
         id: resolve
@@ -66,7 +80,7 @@ jobs:
       - name: Upload patched source as artifact
         uses: actions/upload-artifact@v4
         with:
-          name: patched-source-${{ steps.resolve.outputs.tag }}
+          name: patched-source-${{ steps.resolve.outputs.tag }}-${{ steps.patch.outputs.value }}
           path: lobehub/
           include-hidden-files: true
           retention-days: 7
@@ -77,6 +91,7 @@ jobs:
         run: |
           gh workflow run "C - Release Source" \
             -f lobehub_tag="${{ steps.resolve.outputs.tag }}" \
+            -f patch_version="${{ steps.patch.outputs.value }}" \
             -f artifact_run_id="${{ github.run_id }}" \
             --ref "${{ github.ref_name }}"
 
@@ -86,5 +101,6 @@ jobs:
         run: |
           gh workflow run "D - Build Docker Image" \
             -f lobehub_tag="${{ steps.resolve.outputs.tag }}" \
+            -f patch_version="${{ steps.patch.outputs.value }}" \
             -f artifact_run_id="${{ github.run_id }}" \
             --ref "${{ github.ref_name }}"
