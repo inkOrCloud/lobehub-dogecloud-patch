@@ -29,10 +29,10 @@ fi
 # 如果不存在则回退到旧版 src/server/patches
 if [ -d "apps/server/src" ]; then
   DEST="apps/server/src/patches"
-  ENTRY_FILE="apps/server/src/hono/standalone.ts"
+  ENTRY_FILE="apps/server/src/hono/index.ts"
 else
   DEST="src/server/patches"
-  ENTRY_FILE="src/server/hono/standalone.ts"
+  ENTRY_FILE="src/server/hono/index.ts"
 fi
 mkdir -p "$DEST"
 cp "$PATCHES_DIR/dogecloud-credential-store.ts" "$DEST/"
@@ -42,7 +42,7 @@ echo "✓ 已复制 dogecloud-credential-store.ts → $DEST/"
 if [ -f "$ENTRY_FILE" ]; then
   if ! grep -q "dogecloud-credential-store" "$ENTRY_FILE"; then
     # 在 import honoApp 之后插入凭证存储的 import
-    sed -i "\|^import honoApp from './index';$|a import '../patches/dogecloud-credential-store';" "$ENTRY_FILE"
+    sed -i "\|^import { Hono } from 'hono';$|a import '../patches/dogecloud-credential-store';" "$ENTRY_FILE"
     echo "✓ 已添加 import → $ENTRY_FILE"
   else
     echo "ℹ import 已存在于 $ENTRY_FILE，跳过"

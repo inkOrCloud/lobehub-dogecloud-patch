@@ -63,8 +63,8 @@ jobs:
             echo "--- Credential store file ---"
             ls -la lobehub/apps/server/src/patches/
             echo "--- Entry point import ---"
-            grep -c "dogecloud-credential-store" lobehub/apps/server/src/hono/standalone.ts || \
-              { echo "❌ Import not found in standalone.ts"; exit 1; }
+            grep -c "dogecloud-credential-store" lobehub/apps/server/src/hono/index.ts || \
+              { echo "❌ Import not found in index.ts"; exit 1; }
             echo "✓ All checks passed"
           else
             echo "--- S3 module (legacy) ---"
@@ -72,8 +72,8 @@ jobs:
             echo "--- Credential store file ---"
             ls -la lobehub/src/server/patches/
             echo "--- Entry point import ---"
-            grep -c "dogecloud-credential-store" lobehub/src/server/hono/standalone.ts || \
-              { echo "❌ Import not found in standalone.ts"; exit 1; }
+            grep -c "dogecloud-credential-store" lobehub/src/server/hono/index.ts || \
+              { echo "❌ Import not found in index.ts"; exit 1; }
             echo "✓ All checks passed"
           fi
 
