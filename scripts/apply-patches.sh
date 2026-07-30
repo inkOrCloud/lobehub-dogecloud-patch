@@ -24,6 +24,16 @@ else
   echo "ℹ s3-credential-hook.patch 无法应用（可能已打过），跳过"
 fi
 
+# ── 应用 file-env-fix.patch（允许空的 S3_ENDPOINT）─────────────────
+PATCH_FILE2="$PATCHES_DIR/file-env-fix.patch"
+
+if git apply --check "$PATCH_FILE2" 2>/dev/null; then
+  git apply "$PATCH_FILE2"
+  echo "✓ 已应用 file-env-fix.patch"
+else
+  echo "ℹ file-env-fix.patch 无法应用（可能已打过），跳过"
+fi
+
 # ── 复制 DogeCloud 凭证存储文件 ──────────────────────────────────────
 # 优先使用 apps/server/src/patches（v2.2+ turborepo 结构），
 # 如果不存在则回退到旧版 src/server/patches
