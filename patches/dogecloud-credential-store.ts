@@ -156,6 +156,8 @@ async function fetchFromDogeCloud(): Promise<CachedCredentials> {
  * 在模块加载时自动触发，后续手动调用只刷新凭证。
  */
 async function ensureInitialized(): Promise<void> {
+  // 未配置多吉云凭据时不发起网络请求（例如本地单元测试场景）
+  if (!DOGECLOUD_ACCESS_KEY || !DOGECLOUD_SECRET_KEY || !DOGECLOUD_BUCKET) return;
   if (resolvedEndpoint && resolvedBucket && cachedCredentials) return;
   if (initPromise) return initPromise;
 
@@ -165,11 +167,6 @@ async function ensureInitialized(): Promise<void> {
 
   return initPromise;
 }
-
-// 模块加载时立即触发首次获取（fire-and-forget）
-ensureInitialized().catch((err) => {
-  console.warn('[dogecloud] 首次获取 S3 配置失败，将依赖环境变量回退:', err.message);
-});
 
 // ─── 注册凭证提供者 ─────────────────────────────────────────────────
 
@@ -229,5 +226,20 @@ export function registerDogeCloudCredentialProvider(): void {
   }
 }
 
-// 模块导入时自动注册
-registerDogeCloudCredentialProvider();
+// 模块导入时延迟注册：
+// 1. 本模块与 S3 模块存在循环依赖，若在导入时同步调用 setCredentialProvider，
+//    会在 S3 模块求值完成前访问未初始化的导出而抛错（TypeError）；
+// 2. 等待首次 API 返回后再注册，确保 endpoint / bucket 已解析。
+queueMicrotask(async () => {
+  try {
+    await ensureInitialized();
+  } catch (err) {
+    console.warn('[dogecloud] 首次获取 S3 配置失败，将依赖环境变量回退:', (err as Error).message);
+  } finally {
+    try {
+      registerDogeCloudCredentialProvider();
+    } catch (err) {
+      console.warn('[dogecloud] 注册凭证提供者失败:', (err as Error).message);
+    }
+  }
+});

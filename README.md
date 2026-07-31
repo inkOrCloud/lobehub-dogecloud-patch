@@ -80,7 +80,7 @@ LobeHub 原有 S3 环境变量**不再需要**配置（如果你设了它们会�
 |------|------|
 | `S3_ACCESS_KEY_ID` | 不需要，由 DogeCloud 临时凭证提供 |
 | `S3_SECRET_ACCESS_KEY` | 不需要，由 DogeCloud 临时凭证提供 |
-| `S3_ENABLE_PATH_STYLE` | 保持 `1` |
+| `S3_ENABLE_PATH_STYLE` | 保持 `0`（虚拟主机风格；多吉云当前 COS 后端会拒绝 path-style） |
 | `S3_REGION` | 保持 `us-east-1` |
 
 ## 使用方法
